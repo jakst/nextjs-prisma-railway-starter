@@ -1,5 +1,5 @@
 import useSWR, { mutate } from "swr";
-import { Todo } from "./types";
+import { type Todo } from "./types";
 
 const todoPath = "/api/todos";
 const fetcher = (...args: Parameters<typeof fetch>) =>
@@ -8,37 +8,62 @@ const fetcher = (...args: Parameters<typeof fetch>) =>
 export const useTodos = () => useSWR<Todo[]>(todoPath, fetcher);
 
 export const createTodo = async (text: string) => {
-  mutate(
+  await mutate(
     todoPath,
-    (todos) => [{ text, completed: false, id: "new-todo" }, ...todos],
-    false,
-  );
-  await fetch(todoPath, {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
+    async (todos: Todo[]) => {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  mutate(todoPath);
+      const newTodo = await fetch(todoPath, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }).then((res) => res.json());
+
+      return todos.map((todo) => {
+        if (todo.id === "new-todo") return newTodo;
+        return todo;
+      });
+    },
+    {
+      optimisticData: (todos: Todo[]) => [
+        { text, completed: false, id: "new-todo" },
+        ...todos,
+      ],
+      rollbackOnError: true,
+      populateCache: true,
+      revalidate: false,
+    },
+  );
 };
 
 export const toggleTodo = async (todo: Todo) => {
-  mutate(
+  const completed = !todo.completed;
+
+  await mutate(
     todoPath,
-    (todos) =>
-      todos.map((t) =>
-        t.id === todo.id ? { ...todo, completed: !t.completed } : t,
-      ),
-    false,
+    async (todos: Todo[]) => {
+      await fetch(`${todoPath}?todoId=${todo.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ completed }),
+      });
+
+      return todos;
+    },
+    {
+      optimisticData: (todos: Todo[]) =>
+        todos.map((t) => (t.id === todo.id ? { ...todo, completed } : t)),
+      rollbackOnError: true,
+      populateCache: true,
+      revalidate: false,
+    },
   );
-  await fetch(`${todoPath}?todoId=${todo.id}`, {
-    method: "PUT",
-    body: JSON.stringify({ completed: !todo.completed }),
-  });
-  mutate(todoPath);
 };
 
 export const deleteTodo = async (id: string) => {
-  mutate(todoPath, (todos) => todos.filter((t) => t.id !== id), false);
-  await fetch(`${todoPath}?todoId=${id}`, { method: "DELETE" });
-  mutate(todoPath);
+  await mutate(
+    todoPath,
+    fetch(`${todoPath}?todoId=${id}`, { method: "DELETE" }),
+    {
+      optimisticData: (todos: Todo[]) => todos.filter((t) => t.id !== id),
+    },
+  );
 };
