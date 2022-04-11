@@ -18,7 +18,7 @@ export const TodoList: React.FC = () => {
   return (
     <ul className={styles.todoList}>
       {todos.map(todo => (
-        <TodoItem todo={todo} />
+        <TodoItem key={todo.id} todo={todo} />
       ))}
     </ul>
   );
